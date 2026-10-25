@@ -16,6 +16,7 @@ from wand.api import library as wandlibrary
 from wand.image import Image as WandImage
 from skimage.filters import gaussian
 from scipy.ndimage import zoom as scizoom
+from libero.libero.envs.glass_blur_shuffle import shuffle_pixels
 
 # Tell Python about the C method
 wandlibrary.MagickMotionBlurImage.argtypes = (ctypes.c_void_p,  # wand
@@ -150,7 +151,9 @@ def fog(x, severity=1):
     x = np.array(x) / 255.
     max_val = x.max()
     height_x, weight_x = x.shape[0], x.shape[1]
-    x += c[0] * plasma_fractal(wibbledecay=c[1])[:height_x, :weight_x][..., np.newaxis]
+    # Keep the original noise for <=256px; larger frames need a covering power-of-two map.
+    mapsize = max(256, 1 << (max(height_x, weight_x) - 1).bit_length())
+    x += c[0] * plasma_fractal(mapsize=mapsize, wibbledecay=c[1])[:height_x, :weight_x][..., np.newaxis]
     return np.clip(x * max_val / (max_val + c[0]), 0, 1) * 255
 
 def glass_blur(x, severity=1):
@@ -160,16 +163,7 @@ def glass_blur(x, severity=1):
 
     x = np.uint8(gaussian(np.array(x) / 255., sigma=c[0], channel_axis=-1) * 255)
 
-    height_x, weight_x = x.shape[0], x.shape[1]
-
-    # locally shuffle pixels
-    for i in range(c[2]):
-        for h in range(height_x - c[1], c[1], -1):
-            for w in range(weight_x - c[1], c[1], -1):
-                dx, dy = np.random.randint(-c[1], c[1], size=(2,))
-                h_prime, w_prime = h + dy, w + dx
-                # swap
-                x[h, w], x[h_prime, w_prime] = x[h_prime, w_prime], x[h, w]
+    shuffle_pixels(x, c[1], c[2])
 
     return np.clip(gaussian(x / 255., sigma=c[0], channel_axis=-1), 0, 1) * 255
 
